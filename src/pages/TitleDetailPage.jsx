@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { getTitleBySlug, getTitleSeasons } from "../lib/catalogQueries.js";
 import { formatReleaseDate } from "../lib/formatDate.js";
+import { countryName, languageName } from "../lib/displayNames.js";
 
 // Shared by /series/:slug and /movies/:slug, since the two pages were
 // identical except for one detail field (episode_count vs
@@ -18,6 +19,7 @@ export function TitleDetailPage({ type }) {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(null);
   const [seasons, setSeasons] = useState([]);
+  const [posterFailed, setPosterFailed] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -25,6 +27,7 @@ export function TitleDetailPage({ type }) {
     setNotFound(false);
     setError(null);
     setSeasons([]);
+    setPosterFailed(false);
 
     async function load() {
       const { data, error: queryError } = await getTitleBySlug(supabase, slug);
@@ -83,20 +86,30 @@ export function TitleDetailPage({ type }) {
     <article className="mx-auto max-w-4xl px-4 py-10">
       <div className="grid gap-8 sm:grid-cols-[220px_1fr]">
         <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-secondary">
-          {title.poster_url && (
+          {title.poster_url && !posterFailed ? (
             <img
               src={title.poster_url}
               alt={title.canonical_title}
               loading="lazy"
+              onError={() => setPosterFailed(true)}
               className="h-full w-full object-cover"
             />
+          ) : (
+            <div className="flex h-full items-center justify-center font-ui text-xs text-text-muted">
+              No poster yet
+            </div>
           )}
         </div>
 
         <div className="font-ui">
           <h1 className="font-display text-3xl text-text-primary">{title.canonical_title}</h1>
+          {title.original_title && title.original_title !== title.canonical_title && (
+            <p className="mt-1 text-sm text-text-muted">{title.original_title}</p>
+          )}
           <p className="mt-1 text-text-muted">
-            {[title.release_year, title.country, title.language].filter(Boolean).join(" · ")}
+            {[title.release_year, countryName(title.country), languageName(title.language)]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
           <p className="mt-1 text-sm text-primary">{title.release_status}</p>
           {formatReleaseDate(title.release_date) && (
@@ -110,7 +123,9 @@ export function TitleDetailPage({ type }) {
             <p className="mt-3 text-sm text-text-muted">Runtime: {title.runtime_minutes} min</p>
           )}
 
-          {title.description && <p className="mt-4 text-sm text-text-primary">{title.description}</p>}
+          {title.description && (
+            <p className="mt-4 whitespace-pre-line text-sm text-text-primary">{title.description}</p>
+          )}
 
           {type === "series" && seasons.length > 0 && (
             <section className="mt-6">

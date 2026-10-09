@@ -4,9 +4,15 @@ Goal: make "The Loyal Pin", "THE LOYAL PIN" and "The-Loyal-Pin" compare
 equal, while never merging different seasons of the same show (see
 product spec section 24).
 """
+import html
 import re
 import unicodedata
 
+_SPOILER_PATTERN = re.compile(r"~!.*?!~", re.DOTALL)
+_LINE_BREAK_TAG_PATTERN = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+_SOURCE_NOTE_PATTERN = re.compile(r"\s*[\(\[]\s*(source|written by)\b[^\)\]]*[\)\]]\s*$", re.IGNORECASE)
+_BLANK_LINES_PATTERN = re.compile(r"\n\s*\n\s*\n+")
 _SEASON_PATTERN = re.compile(r"\b(season|s)\s?(\d+)\b", re.IGNORECASE)
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 _PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
@@ -41,6 +47,29 @@ def normalize_title(raw_title: str) -> str:
         text = KNOWN_ALIASES[text]
 
     return f"{text}{season_token}".strip()
+
+
+def clean_description(text: str | None) -> str | None:
+    """Turns a source's description into plain, safe display text.
+
+    Removes spoiler blocks (AniList marks them ~!like this!~), turns
+    <br> into a real line break, drops any other HTML tag, decodes
+    entities such as &amp;, drops a trailing "(Source: ...)" note and
+    squeezes extra blank lines. Returns None when nothing readable is
+    left, so an empty description is never written over a real one.
+    """
+    if not text:
+        return None
+
+    cleaned = _SPOILER_PATTERN.sub("", text)
+    cleaned = _LINE_BREAK_TAG_PATTERN.sub("\n", cleaned)
+    cleaned = _HTML_TAG_PATTERN.sub("", cleaned)
+    cleaned = html.unescape(cleaned)
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = "\n".join(line.rstrip() for line in cleaned.split("\n"))
+    cleaned = _BLANK_LINES_PATTERN.sub("\n\n", cleaned).strip()
+    cleaned = _SOURCE_NOTE_PATTERN.sub("", cleaned).strip()
+    return cleaned or None
 
 
 def slugify(title: str, year: int | None = None) -> str:

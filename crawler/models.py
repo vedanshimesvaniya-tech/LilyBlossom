@@ -37,7 +37,11 @@ class RawCrawlItem(BaseModel):
     release_date: Optional[date] = None
     country: Optional[str] = None
     language: Optional[str] = None
-    status: ReleaseStatus = "Announced"
+    # None means the source could not tell. A missing status is never
+    # written over a known one, and a brand new title then gets the
+    # database default ("Announced"). Before, an unknown status was
+    # stored as "Announced" and overwrote a good "Airing" or "Completed".
+    status: Optional[ReleaseStatus] = None
     episode_count: Optional[int] = None
     runtime_minutes: Optional[int] = None
     description: Optional[str] = None

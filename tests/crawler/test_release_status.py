@@ -51,3 +51,9 @@ def test_a_status_the_source_already_resolved_is_never_overridden():
     item = _item(status="Cancelled", release_date=date(2020, 1, 1))
     resolved = resolve_release_status(item, today=datetime(2026, 1, 1, tzinfo=timezone.utc))
     assert resolved.status == "Cancelled"
+
+
+def test_unknown_status_is_not_turned_into_a_guess():
+    item = _item(status=None, release_date=date(2020, 1, 1))
+    resolved = resolve_release_status(item, today=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert resolved.status is None

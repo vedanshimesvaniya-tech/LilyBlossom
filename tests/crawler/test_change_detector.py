@@ -27,3 +27,20 @@ def test_no_change_when_values_match():
     new_values = {"description": "Same text"}
 
     assert detect_changes(existing, new_values) == []
+
+
+def test_release_year_and_original_title_are_tracked():
+    existing = {"release_year": None, "original_title": None}
+    new_values = {"release_year": 2024, "original_title": "Original"}
+
+    fields = {change.field for change in detect_changes(existing, new_values)}
+
+    assert fields == {"release_year", "original_title"}
+
+
+def test_external_id_is_only_filled_when_empty():
+    changes = detect_changes({"tmdb_id": None}, {"tmdb_id": "42"})
+    assert [(c.field, c.new_value) for c in changes] == [("tmdb_id", "42")]
+
+    assert detect_changes({"tmdb_id": "7"}, {"tmdb_id": "42"}) == []
+    assert detect_changes({"anilist_id": "7"}, {"anilist_id": "42"}) == []

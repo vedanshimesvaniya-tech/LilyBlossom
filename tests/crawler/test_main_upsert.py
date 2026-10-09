@@ -195,7 +195,111 @@ def test_matched_item_with_real_change_updates_and_logs_it():
 
     assert state == "updated"
     assert supabase.titles["title-1"]["release_status"] == "Airing"
-    assert supabase.title_changes[0]["field"] == "release_status"
+    logged_fields = {change["field"] for change in supabase.title_changes}
+    assert "release_status" in logged_fields
+    # The row had no release year, so the crawl also fills it in.
+    assert supabase.titles["title-1"]["release_year"] == 2024
+
+
+def _matched_update(supabase, item):
+    from crawler.deduplicator import CandidateTitle
+    from crawler.normalizer import normalize_title
+
+    candidates = [CandidateTitle(id="title-1", normalized_title=normalize_title("The Loyal Pin"), year=2024, country=None)]
+    return _upsert_item(
+        item=item,
+        source_name="TMDB",
+        source_row={"id": "src-1"},
+        supabase=supabase,
+        candidates=candidates,
+        used_slugs=set(),
+        dry_run=False,
+        run_id="run-1",
+    )
+
+
+def test_unchanged_title_with_a_stored_poster_is_not_marked_updated():
+    stored_url = "https://fake.supabase.co/storage/v1/object/public/title-posters/the-loyal-pin-2024/abc.jpg"
+    supabase = FakeSupabase(
+        titles=[
+            {
+                "id": "title-1",
+                "canonical_title": "The Loyal Pin",
+                "release_year": 2024,
+                "poster_url": stored_url,
+                "is_locked": False,
+            }
+        ]
+    )
+    supabase.poster_assets.append(
+        {"title_id": "title-1", "source_url": "https://image.example/poster.jpg", "storage_path": "x/abc.jpg", "hash": "abc"}
+    )
+
+    state = _matched_update(supabase, make_item(poster_url="https://image.example/poster.jpg"))
+
+    assert state == "existing"
+    assert supabase.titles["title-1"]["poster_url"] == stored_url
+    assert supabase.title_changes == []
+    assert supabase.poster_uploads == []
+
+
+def test_unknown_status_never_overwrites_a_known_status():
+    supabase = FakeSupabase(
+        titles=[
+            {
+                "id": "title-1",
+                "canonical_title": "The Loyal Pin",
+                "release_year": 2024,
+                "release_status": "Completed",
+                "is_locked": False,
+            }
+        ]
+    )
+
+    state = _matched_update(supabase, make_item(status=None))
+
+    assert state == "existing"
+    assert supabase.titles["title-1"]["release_status"] == "Completed"
+
+
+def test_a_second_source_fills_in_its_external_id_on_a_matched_title():
+    supabase = FakeSupabase(
+        titles=[
+            {
+                "id": "title-1",
+                "canonical_title": "The Loyal Pin",
+                "release_year": 2024,
+                "anilist_id": "111",
+                "is_locked": False,
+            }
+        ]
+    )
+
+    state = _matched_update(supabase, make_item(tmdb_id="999", anilist_id="222"))
+
+    assert state == "updated"
+    assert supabase.titles["title-1"]["tmdb_id"] == "999"
+    assert supabase.titles["title-1"]["anilist_id"] == "111"  # an existing ID is never swapped
+
+
+def test_description_is_cleaned_before_it_is_stored():
+    supabase = FakeSupabase()
+    _upsert_item(
+        item=make_item(description="Two girls meet.<br><br>A hidden ~!twist!~ awaits.<br>(Source: Example)"),
+        source_name="AniList",
+        source_row={"id": "src-1"},
+        supabase=supabase,
+        candidates=[],
+        used_slugs=set(),
+        dry_run=False,
+        run_id="run-1",
+    )
+
+    [title] = supabase.titles.values()
+    assert "<br>" not in title["description"]
+    assert "twist" not in title["description"]
+    assert "Source" not in title["description"]
+    assert title["description"].startswith("Two girls meet.")
 
 
 def test_locked_title_is_never_overwritten():

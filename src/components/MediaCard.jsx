@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ProgressBar } from "./ProgressBar.jsx";
 import { WATCH_STATUS_LABELS } from "../lib/constants.js";
+import { countryName } from "../lib/displayNames.js";
 
 /**
  * Deliberately minimal, per the "do not overload cards" rule: poster,
@@ -12,6 +14,10 @@ import { WATCH_STATUS_LABELS } from "../lib/constants.js";
  */
 export function MediaCard({ item }) {
   const href = item.type === "series" ? `/series/${item.slug}` : `/movies/${item.slug}`;
+  // A poster link can go dead after it was saved. When the image fails
+  // to load, show the same placeholder as a title with no poster.
+  const [posterFailed, setPosterFailed] = useState(false);
+  const showPoster = Boolean(item.posterUrl) && !posterFailed;
 
   return (
     <Link
@@ -19,11 +25,12 @@ export function MediaCard({ item }) {
       className="group block overflow-hidden rounded-card border border-border bg-surface transition hover:shadow-md"
     >
       <div className="relative aspect-[2/3] w-full bg-secondary">
-        {item.posterUrl ? (
+        {showPoster ? (
           <img
             src={item.posterUrl}
             alt={item.title}
             loading="lazy"
+            onError={() => setPosterFailed(true)}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -38,8 +45,8 @@ export function MediaCard({ item }) {
 
       <div className="space-y-1 p-3 font-ui">
         <p className="line-clamp-1 text-sm text-text-primary">{item.title}</p>
-        <p className="text-xs text-text-muted">
-          {[item.year, item.country, item.type === "series" ? "Series" : "Movie"]
+        <p className="line-clamp-1 text-xs text-text-muted">
+          {[item.year, countryName(item.country), item.type === "series" ? "Series" : "Movie"]
             .filter(Boolean)
             .join(" · ")}
         </p>
