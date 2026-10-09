@@ -93,6 +93,14 @@ architecture described above:
   date, status, runtime, language, country, IMDb id) through one extra
   call per title. Run migration `019_title_seasons.sql` for the season
   list, which the series page shows. See docs/CRAWLER.md.
+- Crawled data now shows properly. Country and language appear as names
+  instead of codes, titles with no year no longer lead the Newest and
+  Airing lists, descriptions are plain text, and a dead poster link
+  falls back to a placeholder. In the crawler, an unknown status or
+  field no longer overwrites a known one, a year learned later is
+  filled in, a second source adds its external ID to a matched title,
+  and a title with a stored poster is no longer counted as Updated on
+  every run. See "Data quality rules" in docs/CRAWLER.md.
 - The crawler has four sources: AniList, MyAnimeList, and TMDB use
   official, documented, free JSON APIs, not scraping, so there is no
   markup to keep in sync, and can each return a temporary error or get

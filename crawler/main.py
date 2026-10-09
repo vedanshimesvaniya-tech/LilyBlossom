@@ -48,7 +48,7 @@ from .config import (
 )
 from .deduplicator import CandidateTitle, classify_match, find_best_match
 from .models import CrawlRunSummary, RawCrawlItem
-from .normalizer import normalize_title, slugify
+from .normalizer import clean_description, normalize_title, slugify
 from .poster_handler import store_poster_for_title
 from .sources.base import SourceAdapter
 from .sources.gl_archive import GLArchiveAdapter
@@ -228,7 +228,7 @@ def build_title_fields(item: RawCrawlItem) -> dict:
         "release_year": item.year,
         "release_date": item.release_date.isoformat() if item.release_date else None,
         "release_status": item.status,
-        "description": item.description,
+        "description": clean_description(item.description),
         "poster_url": str(item.poster_url) if item.poster_url else None,
         "episode_count": item.episode_count,
         "runtime_minutes": item.runtime_minutes,
@@ -307,6 +307,34 @@ def insert_new_title(supabase: Client, item: RawCrawlItem, source_name: str, pub
     return title_id
 
 
+def _poster_already_stored(supabase: Client, title_id: str, source_poster_url: str | None) -> bool:
+    """True when this source poster was already copied to Storage for the
+    title (poster_assets keeps the source URL it came from).
+
+    titles.poster_url holds the Storage URL, while the source always
+    sends its own URL. Without this check the two never matched, so
+    every unchanged title looked changed on every crawl: it counted as
+    Updated, logged a fake poster_url change, bumped updated_at and
+    downloaded the poster again. A failed lookup just means "not sure",
+    and the normal path runs.
+    """
+    if not source_poster_url:
+        return False
+    try:
+        rows = (
+            supabase.table("poster_assets")
+            .select("storage_path")
+            .eq("title_id", title_id)
+            .eq("source_url", source_poster_url)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception:  # noqa: BLE001 - a lookup problem must never fail the title update
+        return False
+    return bool(rows)
+
+
 def apply_update_to_title(
     supabase: Client,
     title_id: str,
@@ -325,7 +353,11 @@ def apply_update_to_title(
     if existing_row.get("is_locked"):
         raise LockedTitleError(f"Title {title_id} is locked; refusing to overwrite its fields.")
 
-    changes = detect_changes(existing_row, build_title_fields(item))
+    new_fields = build_title_fields(item)
+    if _poster_already_stored(supabase, title_id, new_fields.get("poster_url")):
+        new_fields["poster_url"] = None
+
+    changes = detect_changes(existing_row, new_fields)
     if not changes:
         return False
 

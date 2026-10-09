@@ -29,6 +29,24 @@ const CARD_COLUMNS = "canonical_slug, type, canonical_title, release_year, count
 export const DEFAULT_PAGE_SIZE = 24;
 const HIGHLIGHT_LIMIT = 12;
 
+// One list for "not out yet", used by the home page and the Upcoming
+// page. The home page used to leave out "In Production", so the two
+// showed different titles.
+const UPCOMING_STATUSES = ["Announced", "In Production", "Upcoming"];
+
+// Hides a title whose release date has already passed, which can
+// linger with an old "Upcoming" status until the next crawl corrects
+// it. A title with no known release date is kept.
+function onlyNotYetReleased(query) {
+  const today = new Date().toISOString().slice(0, 10);
+  return query.or(`release_date.is.null,release_date.gte.${today}`);
+}
+
+// Newest first with unknown years last. Postgres puts empty values
+// first on a descending sort, so a title with no year used to lead the
+// "Newest" and "Airing" lists.
+const YEAR_NEWEST_FIRST = { ascending: false, nullsFirst: false };
+
 function toCardData(row) {
   return {
     slug: row.canonical_slug,
@@ -49,9 +67,8 @@ export async function getHomeSections(supabase) {
   const base = () => supabase.from("titles").select(CARD_COLUMNS).eq("is_published", true);
 
   const [airing, upcoming, recentlyAdded, announcements] = await Promise.all([
-    base().eq("release_status", "Airing").order("release_year", { ascending: false }).limit(HIGHLIGHT_LIMIT),
-    base()
-      .in("release_status", ["Upcoming", "Announced"])
+    base().eq("release_status", "Airing").order("release_year", YEAR_NEWEST_FIRST).limit(HIGHLIGHT_LIMIT),
+    onlyNotYetReleased(base().in("release_status", UPCOMING_STATUSES))
       .order("release_date", { ascending: true })
       .limit(HIGHLIGHT_LIMIT),
     base().order("created_at", { ascending: false }).limit(HIGHLIGHT_LIMIT),
@@ -81,8 +98,8 @@ export async function getHomeSections(supabase) {
 }
 
 const SORT_TO_ORDER = {
-  Newest: { column: "release_year", ascending: false },
-  Oldest: { column: "release_year", ascending: true },
+  Newest: { column: "release_year", ascending: false, nullsFirst: false },
+  Oldest: { column: "release_year", ascending: true, nullsFirst: false },
   "A-Z": { column: "canonical_title", ascending: true },
   "Recently Updated": { column: "updated_at", ascending: false }
 };
@@ -108,7 +125,10 @@ export async function getTitlesByType(supabase, type, filters = {}, { page = 1, 
   const from = (Math.max(page, 1) - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const { data, count, error } = await query.order(order.column, { ascending: order.ascending }).range(from, to);
+  const orderOptions = { ascending: order.ascending };
+  if (order.nullsFirst !== undefined) orderOptions.nullsFirst = order.nullsFirst;
+
+  const { data, count, error } = await query.order(order.column, orderOptions).range(from, to);
   return { data: (data ?? []).map(toCardData), count: count ?? 0, error: toErrorMessage(error) };
 }
 
@@ -173,17 +193,19 @@ export async function getAiring(supabase) {
     .select(CARD_COLUMNS)
     .eq("is_published", true)
     .eq("release_status", "Airing")
-    .order("release_year", { ascending: false })
+    .order("release_year", YEAR_NEWEST_FIRST)
     .limit(60);
   return { data: (data ?? []).map(toCardData), error: toErrorMessage(error) };
 }
 
 export async function getUpcoming(supabase) {
-  const { data, error } = await supabase
-    .from("titles")
-    .select(`${CARD_COLUMNS}, release_date`)
-    .eq("is_published", true)
-    .in("release_status", ["Announced", "In Production", "Upcoming"])
+  const { data, error } = await onlyNotYetReleased(
+    supabase
+      .from("titles")
+      .select(`${CARD_COLUMNS}, release_date`)
+      .eq("is_published", true)
+      .in("release_status", UPCOMING_STATUSES)
+  )
     .order("release_date", { ascending: true })
     .limit(60);
   return { data: (data ?? []).map(toCardData), error: toErrorMessage(error) };

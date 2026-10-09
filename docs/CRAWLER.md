@@ -151,6 +151,50 @@ merged across two different existing title rows; that, and resolving
 the 0.80-0.95 "uncertain" band, is still what the admin review queue
 is for.
 
+## Data quality rules
+
+These rules keep crawled data correct when it reaches the site. Each
+one fixes a case where good data was lost or shown wrongly.
+
+- **Unknown never replaces known.** A field a source could not fill is
+  left out of the write. This now includes the release status:
+  `RawCrawlItem.status` is `None` when a source cannot tell (for
+  example when TMDB's detail call fails), so a title that was
+  `Completed` is not pushed back to `Announced`. A brand new title with
+  no status gets the database default, `Announced`.
+- **External IDs are fill only.** `tmdb_id`, `anilist_id` and `imdb_id`
+  are saved on a matched title only when it has none yet, and an
+  existing ID is never swapped. A title that one source created by
+  fuzzy match therefore gains the other source's ID, and the next crawl
+  matches it by ID.
+- **Year and original title are tracked.** `release_year` and
+  `original_title` are compared and updated like the other fields, so
+  a year that becomes known later is filled in instead of staying
+  blank.
+- **A stored poster is not a change.** `titles.poster_url` holds the
+  Storage URL, while a source always sends its own URL. Before this
+  rule they never matched, so every unchanged title counted as
+  Updated, logged a fake `poster_url` change and downloaded its poster
+  again on every crawl. `poster_assets.source_url` is now checked
+  first, and a poster already stored is skipped.
+- **Descriptions are plain text.** `clean_description()` in
+  `normalizer.py` removes HTML tags, spoiler blocks (`~!...!~`),
+  entities and trailing `(Source: ...)` notes. It runs in
+  `build_title_fields()`, so every source and the admin publish action
+  get it.
+
+The site side of the same problem lives in `src/lib/catalogQueries.js`
+and `src/lib/displayNames.js`:
+
+- Country and language codes are shown as names ("Thailand",
+  "Japanese") using the browser's `Intl.DisplayNames`. An unknown code
+  is shown as is.
+- Titles with no year sort last in Newest, Oldest and Airing lists.
+- The home page and the Upcoming page use the same statuses
+  (`Announced`, `In Production`, `Upcoming`) and hide a title whose
+  release date has already passed.
+- A poster that fails to load shows the "No poster yet" placeholder.
+
 ## AniList (the main global source)
 
 `crawler/sources/anilist.py` is the main source. It queries AniList's

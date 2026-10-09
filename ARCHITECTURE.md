@@ -112,7 +112,10 @@ real confidence, and only leaves a genuinely unclear match for a human:
    one enabled row in the `sources` table (`crawler/main.py`'s
    `load_enabled_sources()`; Admin -> Sources controls this).
 2. `normalizer.py` cleans the title text so different casing,
-   punctuation, or hyphenation do not look like different titles.
+   punctuation, or hyphenation do not look like different titles. Its
+   `clean_description()` also turns a source description into plain
+   text (no HTML tags, spoiler blocks, or "(Source: ...)" notes) before
+   it is stored.
 3. `deduplicator.py` checks a shared external ID (TMDB, AniList, IMDb)
    first, then falls back to a rapidfuzz match against titles already
    in the database.
@@ -122,7 +125,10 @@ real confidence, and only leaves a genuinely unclear match for a human:
      metadata against the existing row. A real difference updates that
      row and logs a `title_changes` entry; no difference touches
      nothing. Either way, unless the existing title is `is_locked`, in
-     which case the crawler never writes to it at all.
+     which case the crawler never writes to it at all. An unknown value
+     never replaces a known one, external IDs are only filled in when
+     empty, and a poster already copied to Storage is not treated as a
+     change (see docs/CRAWLER.md, "Data quality rules").
    - An unclear match (0.80-0.95 fuzzy confidence): nothing is written
      to `titles`. It waits in `crawl_items` as `uncertain` for a human.
 5. Every title the item touched, new or existing, gets a `title_sources`
